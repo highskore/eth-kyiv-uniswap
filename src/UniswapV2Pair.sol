@@ -11,20 +11,42 @@ import { IUniswapV2Factory } from "./interfaces/IUniswapV2Factory.sol";
 import { IUniswapV2Callee } from "./interfaces/IUniswapV2Callee.sol";
 import { console2 } from "forge-std/src/console2.sol";
 
+//
+// ███████╗ █████╗ ███╗   ██╗██████╗ ██╗    ██╗██╗ ██████╗██╗  ██╗██╗     ███████╗███████╗███████╗
+// ██╔════╝██╔══██╗████╗  ██║██╔══██╗██║    ██║██║██╔════╝██║  ██║██║     ██╔════╝██╔════╝██╔════╝
+// ███████╗███████║██╔██╗ ██║██║  ██║██║ █╗ ██║██║██║     ███████║██║     █████╗  ███████╗███████╗
+// ╚════██║██╔══██║██║╚██╗██║██║  ██║██║███╗██║██║██║     ██╔══██║██║     ██╔══╝  ╚════██║╚════██║
+// ███████║██║  ██║██║ ╚████║██████╔╝╚███╔███╔╝██║╚██████╗██║  ██║███████╗███████╗███████║███████║
+// ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═════╝  ╚══╝╚══╝ ╚═╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝╚══════╝
+//
+// ██╗   ██╗███╗   ██╗██╗███████╗██╗    ██╗ █████╗ ██████╗
+// ██║   ██║████╗  ██║██║██╔════╝██║    ██║██╔══██╗██╔══██╗
+// ██║   ██║██╔██╗ ██║██║███████╗██║ █╗ ██║███████║██████╔╝
+// ██║   ██║██║╚██╗██║██║╚════██║██║███╗██║██╔══██║██╔═══╝
+// ╚██████╔╝██║ ╚████║██║███████║╚███╔███╔╝██║  ██║██║
+//  ╚═════╝ ╚═╝  ╚═══╝╚═╝╚══════╝ ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝
+//
+
+// @title UniswapV2Pair
+// @dev UniswapV2Pair contract that has anti sandwich attack mechanism, where you can
+// claim your share of the swap if you are the recipient of the swap
 contract UniswapV2Pair is IUniswapV2Pair, UniswapV2ERC20 {
+    // @dev Emitted when a swap has been claimed
+    event Claimed(uint256 _block, address _to, uint256 _amount0, uint256 _amount1);
+
     using UQ112x112 for uint224;
 
+    // @dev Struct to store swap information
     struct SwapLog {
         uint256 amount0in;
         uint256 amount1in;
         uint256 amount0out;
         uint256 amount1out;
         address to;
-        uint256 reserve0;
-        uint256 reserve1;
         bool claimed;
     }
 
+    // @dev Struct to store balances per block
     struct BalancesPerBlack {
         uint256 outstandingbalance0;
         uint256 outstandingbalance1;
@@ -32,9 +54,14 @@ contract UniswapV2Pair is IUniswapV2Pair, UniswapV2ERC20 {
         uint256 instandingbalance1;
     }
 
+    // @dev Track the total outstanding balance of token0 and token1
     uint256 public totalOutstandingbalance0;
     uint256 public totalOutstandingbalance1;
+
+    // @dev Mapping to store balances per block
     mapping(uint256 => BalancesPerBlack) public balancesPerBlock;
+
+    // @dev Mapping to store swaps per block
     mapping(uint256 => SwapLog[]) public swapsPerBlock;
 
     uint256 public constant override MINIMUM_LIQUIDITY = 10 ** 3;
@@ -101,15 +128,6 @@ contract UniswapV2Pair is IUniswapV2Pair, UniswapV2ERC20 {
         }
         reserve0 = uint112(balance0 - totalOutstandingbalance0);
         reserve1 = uint112(balance1 - totalOutstandingbalance1);
-        console2.log("--------------------");
-        console2.log("reserve0", reserve0);
-        console2.log("reserve1", reserve1);
-        console2.log("balance0", balance0);
-        console2.log("balance1", balance1);
-        console2.log("totalOutstandingbalance0", totalOutstandingbalance0);
-        console2.log("totalOutstandingbalance1", totalOutstandingbalance1);
-        console2.log("--------------------");
-
         blockTimestampLast = blockTimestamp;
         emit Sync(reserve0, reserve1);
     }
@@ -240,8 +258,6 @@ contract UniswapV2Pair is IUniswapV2Pair, UniswapV2ERC20 {
                 amount0out: amount0Out,
                 amount1out: amount1Out,
                 to: to,
-                reserve0: _reserve0,
-                reserve1: _reserve1,
                 claimed: false
             })
         );
@@ -287,6 +303,10 @@ contract UniswapV2Pair is IUniswapV2Pair, UniswapV2ERC20 {
                 }
                 // Mark the swap as claimed
                 swapsPerBlock[_block][i].claimed = true;
+                if (share0 > 0 || share1 > 0) {
+                    // Emit an event
+                    emit Claimed(_block, msg.sender, share0, share1);
+                }
             }
         }
     }
